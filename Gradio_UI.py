@@ -305,15 +305,6 @@ class GradioUI:
                 [stored_messages, chatbot],
                 [chatbot]
             )
-            send_btn.click(
-                self.log_user_message,
-                [text_input, file_uploads_log],
-                [stored_messages, text_input],
-            ).then(
-                self.interact_with_agent,
-                [stored_messages, chatbot],
-                [chatbot]
-            )
 
         demo.launch(debug=True, share=True, **kwargs)
 
