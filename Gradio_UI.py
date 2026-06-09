@@ -155,14 +155,27 @@ class GradioUI:
             if not os.path.exists(file_upload_folder):
                 os.mkdir(file_upload_folder)
 
-    def interact_with_agent(self, prompt, messages):
-        import gradio as gr
-        messages.append(gr.ChatMessage(role="user", content=prompt))
-        yield messages
-        for msg in stream_to_gradio(self.agent, task=prompt, reset_agent_memory=False):
-            messages.append(msg)
-            yield messages
-        yield messages
+def interact_with_agent(self, prompt, messages):
+    import gradio as gr
+    messages.append(gr.ChatMessage(role="user", content=prompt))
+    yield messages
+
+    final_response = ""
+    for msg in stream_to_gradio(self.agent, task=prompt, reset_agent_memory=False):
+        # Only capture the final answer, skip all step messages
+        if hasattr(msg, "content") and isinstance(msg.content, str):
+            if msg.content.startswith("**Final answer:**"):
+                final_response = msg.content.replace("**Final answer:**", "").strip()
+            elif "FinalAnswerStep" in msg.content:
+                # Clean up FinalAnswerStep wrapper if present
+                import re
+                match = re.search(r"final_answer='(.+)'", msg.content, re.DOTALL)
+                if match:
+                    final_response = match.group(1).strip()
+
+    if final_response:
+        messages.append(gr.ChatMessage(role="assistant", content=final_response))
+    yield messages
 
     def log_user_message(self, text_input, file_uploads_log):
         return (
