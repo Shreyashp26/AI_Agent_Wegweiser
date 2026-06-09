@@ -13,12 +13,11 @@ from smolagents.utils import _is_package_available
 
 
 def pull_messages_from_step(step_log: MemoryStep):
-    """Extract ChatMessage objects from agent steps with proper nesting"""
+    """Extract ChatMessage objects from agent steps"""
     import gradio as gr
 
     if isinstance(step_log, ActionStep):
         step_number = f"Step {step_log.step_number}" if step_log.step_number is not None else ""
-        yield gr.ChatMessage(role="assistant", content=f"**{step_number}**")
 
         if hasattr(step_log, "model_output") and step_log.model_output is not None:
             model_output = step_log.model_output.strip()
@@ -26,7 +25,6 @@ def pull_messages_from_step(step_log: MemoryStep):
             model_output = re.sub(r"<end_code>\s*```", "```", model_output)
             model_output = re.sub(r"```\s*\n\s*<end_code>", "```", model_output)
             model_output = model_output.strip()
-            yield gr.ChatMessage(role="assistant", content=model_output)
 
         if hasattr(step_log, "tool_calls") and step_log.tool_calls is not None:
             first_tool_call = step_log.tool_calls[0]
@@ -79,18 +77,11 @@ def pull_messages_from_step(step_log: MemoryStep):
             parent_message_tool.metadata["status"] = "done"
 
         elif hasattr(step_log, "error") and step_log.error is not None:
-            yield gr.ChatMessage(role="assistant", content=str(step_log.error), metadata={"title": "💥 Error"})
-
-        step_footnote = f"{step_number}"
-        if hasattr(step_log, "input_token_count") and hasattr(step_log, "output_token_count"):
-            token_str = f" | Input-tokens:{step_log.input_token_count:,} | Output-tokens:{step_log.output_token_count:,}"
-            step_footnote += token_str
-        if hasattr(step_log, "duration"):
-            step_duration = f" | Duration: {round(float(step_log.duration), 2)}" if step_log.duration else None
-            step_footnote += step_duration
-        step_footnote = f"""<span style="color: #bbbbc2; font-size: 12px;">{step_footnote}</span> """
-        yield gr.ChatMessage(role="assistant", content=f"{step_footnote}")
-        yield gr.ChatMessage(role="assistant", content="-----")
+            yield gr.ChatMessage(
+                role="assistant",
+                content=str(step_log.error),
+                metadata={"title": "💥 Error"}
+            )
 
 
 def stream_to_gradio(
@@ -125,7 +116,7 @@ def stream_to_gradio(
     if isinstance(final_answer, AgentText):
         yield gr.ChatMessage(
             role="assistant",
-            content=f"**Final answer:**\n{final_answer.to_string()}\n",
+            content=f"{final_answer.to_string()}",  # ← no "Final answer:" prefix
         )
     elif isinstance(final_answer, AgentImage):
         yield gr.ChatMessage(
@@ -138,7 +129,7 @@ def stream_to_gradio(
             content={"path": final_answer.to_string(), "mime_type": "audio/wav"},
         )
     else:
-        yield gr.ChatMessage(role="assistant", content=f"**Final answer:** {str(final_answer)}")
+        yield gr.ChatMessage(role="assistant", content=str(final_answer))
 
 
 class GradioUI:
@@ -155,27 +146,34 @@ class GradioUI:
             if not os.path.exists(file_upload_folder):
                 os.mkdir(file_upload_folder)
 
-def interact_with_agent(self, prompt, messages):
-    import gradio as gr
-    messages.append(gr.ChatMessage(role="user", content=prompt))
-    yield messages
+    # ✅ FIXED — properly indented inside the class
+    def interact_with_agent(self, prompt, messages):
+        import gradio as gr
 
-    final_response = ""
-    for msg in stream_to_gradio(self.agent, task=prompt, reset_agent_memory=False):
-        # Only capture the final answer, skip all step messages
-        if hasattr(msg, "content") and isinstance(msg.content, str):
-            if msg.content.startswith("**Final answer:**"):
-                final_response = msg.content.replace("**Final answer:**", "").strip()
-            elif "FinalAnswerStep" in msg.content:
-                # Clean up FinalAnswerStep wrapper if present
-                import re
-                match = re.search(r"final_answer='(.+)'", msg.content, re.DOTALL)
-                if match:
-                    final_response = match.group(1).strip()
+        messages.append(gr.ChatMessage(role="user", content=prompt))
+        yield messages
 
-    if final_response:
-        messages.append(gr.ChatMessage(role="assistant", content=final_response))
-    yield messages
+        final_response = ""
+        for msg in stream_to_gradio(self.agent, task=prompt, reset_agent_memory=False):
+            if hasattr(msg, "content") and isinstance(msg.content, str):
+                # Skip step numbers, tool calls, logs, dividers
+                if msg.content.startswith("**Step"):
+                    continue
+                if msg.content.strip() == "-----":
+                    continue
+                if "<span style=" in msg.content:
+                    continue
+                if hasattr(msg, "metadata") and msg.metadata:
+                    continue
+                # Capture the actual answer
+                content = msg.content.replace("**Final answer:**", "").strip()
+                if content:
+                    final_response = content
+
+        if final_response:
+            messages.append(gr.ChatMessage(role="assistant", content=final_response))
+
+        yield messages
 
     def log_user_message(self, text_input, file_uploads_log):
         return (
@@ -190,15 +188,11 @@ def interact_with_agent(self, prompt, messages):
     def launch(self, **kwargs):
         import gradio as gr
 
-        # ── Custom CSS ──────────────────────────────────────────────
         custom_css = """
-        /* Page background */
         .gradio-container {
             background: linear-gradient(135deg, #0f1923 0%, #1a2a3a 100%) !important;
             font-family: 'Segoe UI', sans-serif !important;
         }
-
-        /* Header banner */
         .wegweiser-header {
             text-align: center;
             padding: 32px 20px 16px 20px;
@@ -223,8 +217,6 @@ def interact_with_agent(self, prompt, messages):
             font-size: 1.8rem;
             margin-bottom: 6px;
         }
-
-        /* Suggestion cards */
         .suggestions-row {
             display: flex;
             flex-wrap: wrap;
@@ -256,15 +248,11 @@ def interact_with_agent(self, prompt, messages):
             color: #c5d3e0;
             line-height: 1.3;
         }
-
-        /* Chatbot */
         .chatbot-wrap {
             border-radius: 16px !important;
             border: 1px solid #2a3f55 !important;
             background: #131f2b !important;
         }
-
-        /* Input box */
         .input-row textarea {
             background: #1a2a3a !important;
             border: 1px solid #2a3f55 !important;
@@ -275,8 +263,6 @@ def interact_with_agent(self, prompt, messages):
         .input-row textarea:focus {
             border-color: #F5A623 !important;
         }
-
-        /* Footer */
         .wegweiser-footer {
             text-align: center;
             padding: 12px;
@@ -284,18 +270,6 @@ def interact_with_agent(self, prompt, messages):
             font-size: 0.78rem;
         }
         """
-
-        # ── Suggestion cards data ────────────────────────────────────
-        suggestions = [
-            ("🏛️", "I just arrived in Germany.\nWhat should I do first?"),
-            ("📋", "What is Anmeldung and\nhow do I complete it?"),
-            ("🏥", "How does health insurance\nwork in Germany?"),
-            ("🗣️", "Give me German phrases\nfor visiting a doctor"),
-            ("🔄", "Translate: Ich verstehe\ndas nicht"),
-            ("🏦", "How do I open a bank\naccount in Germany?"),
-            ("💼", "What do I need before\nstarting a new job?"),
-            ("🏠", "What documents do I need\nto rent a flat?"),
-        ]
 
         with gr.Blocks(
             fill_height=True,
@@ -306,7 +280,6 @@ def interact_with_agent(self, prompt, messages):
             stored_messages = gr.State([])
             file_uploads_log = gr.State([])
 
-            # ── Header ───────────────────────────────────────────────
             gr.HTML("""
                 <div class="wegweiser-header">
                     <div class="wegweiser-flag">🇩🇪</div>
@@ -318,7 +291,6 @@ def interact_with_agent(self, prompt, messages):
                 </div>
             """)
 
-            # ── Suggestion cards ─────────────────────────────────────
             gr.HTML("""
                 <div class="suggestions-row">
                     <div class="suggestion-card" onclick="document.querySelector('textarea').value=this.querySelector('.suggestion-text').innerText; document.querySelector('textarea').dispatchEvent(new Event('input'))">
@@ -356,7 +328,6 @@ def interact_with_agent(self, prompt, messages):
                 </div>
             """)
 
-            # ── Chatbot ──────────────────────────────────────────────
             chatbot = gr.Chatbot(
                 label="",
                 type="messages",
@@ -376,7 +347,6 @@ def interact_with_agent(self, prompt, messages):
                 ),
             )
 
-            # ── Input ────────────────────────────────────────────────
             with gr.Row(elem_classes=["input-row"]):
                 text_input = gr.Textbox(
                     lines=1,
@@ -386,7 +356,6 @@ def interact_with_agent(self, prompt, messages):
                     container=False,
                 )
 
-            # ── Footer ───────────────────────────────────────────────
             gr.HTML("""
                 <div class="wegweiser-footer">
                     Built with smolagents · Qwen2.5 · Hugging Face &nbsp;|&nbsp;
@@ -394,7 +363,6 @@ def interact_with_agent(self, prompt, messages):
                 </div>
             """)
 
-            # ── Events ───────────────────────────────────────────────
             text_input.submit(
                 self.log_user_message,
                 [text_input, file_uploads_log],
