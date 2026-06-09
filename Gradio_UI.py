@@ -108,7 +108,7 @@ class GradioUI:
             if "<span style=" in content:
                 continue
 
-            # ✅ Unwrap FinalAnswerStep object
+            # Unwrap FinalAnswerStep object
             if "FinalAnswerStep(final_answer=" in content:
                 match = re.search(r"FinalAnswerStep\(final_answer=['\"](.+)['\"][\s]*\)$", content, re.DOTALL)
                 if match:
@@ -116,10 +116,10 @@ class GradioUI:
                 else:
                     content = content.replace("FinalAnswerStep(final_answer=", "").strip("'\"() ")
 
-            # ✅ Strip label prefix
+            # Strip label prefix
             content = content.replace("**Final answer:**", "").strip()
 
-            # ✅ Fix escaped newlines
+            # Fix escaped newlines
             content = content.replace("\\n", "\n")
 
             if content:
@@ -245,7 +245,7 @@ class GradioUI:
                     </div>
                     <div class="suggestion-card" onclick="document.querySelector('textarea').value=this.querySelector('.suggestion-text').innerText; document.querySelector('textarea').dispatchEvent(new Event('input'))">
                         <div class="suggestion-icon">🔄</div>
-                        <div class="suggestion-text">Translate: Ich verstehe das nicht</div>
+                        <div class="suggestion-text">Translate: Ich verstehe das nicht in English</div>
                     </div>
                     <div class="suggestion-card" onclick="document.querySelector('textarea').value=this.querySelector('.suggestion-text').innerText; document.querySelector('textarea').dispatchEvent(new Event('input'))">
                         <div class="suggestion-icon">🏦</div>
@@ -274,7 +274,6 @@ class GradioUI:
                 elem_classes=["chatbot-wrap"],
                 placeholder=(
                     "<div style='text-align:center; color:#4a6070; padding: 40px 20px;'>"
-                    "<div style='font-size:2.5rem'>🗺️</div>"
                     "<div style='font-size:1rem; margin-top:8px;'>Ask me anything about life in Germany.<br>"
                     "Click a card above or type your question below.</div>"
                     "</div>"
