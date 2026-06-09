@@ -1,164 +1,219 @@
-from smolagents import CodeAgent, DuckDuckGoSearchTool, HfApiModel, load_tool, tool
+from smolagents import CodeAgent, DuckDuckGoSearchTool, HfApiModel, tool
 import datetime
 import pytz
 import yaml
+import requests
 from tools.final_answer import FinalAnswerTool
 from Gradio_UI import GradioUI
 
+HF_TOKEN = os.environ.get("HF_TOKEN", "")
+
 # ================================================================
-# 🛡️ SAFETY CHECK — Block offensive/irrelevant queries
+# 🛡️ SAFETY CHECK
 # ================================================================
 @tool
 def safety_check(query: str) -> str:
-    """Checks if a user query is appropriate and related to Germany/language topics.
-    Always run this tool FIRST before answering any user question.
+    """Checks if a user query is appropriate. Always run this FIRST.
     Args:
-        query: The user's question or message to check.
+        query: The user's message to check.
     """
-    offensive_keywords = [
+    blocked = [
         "hate", "kill", "weapon", "drug", "racist", "porn",
         "illegal", "bomb", "terror", "violence", "abuse",
         "sex", "nude", "hack", "steal", "fraud"
     ]
-    
-    query_lower = query.lower()
-    for word in offensive_keywords:
-        if word in query_lower:
-            return "BLOCKED: This question is outside the scope of what I help with. I'm here to help newcomers settle into Germany — things like paperwork, daily life, and learning German. Let's keep it helpful and respectful!"
-    
-    return "SAFE: Query is appropriate. Proceed with answering."
+    if any(word in query.lower() for word in blocked):
+        return "BLOCKED: That's outside what I help with. I'm here for Germany life and language questions — let's keep it useful!"
+    return "SAFE"
 
 # ================================================================
-# 🏛️ TOOL 1 — Germany Bureaucracy & Life Guide
+# 🏛️ TOOL 1 — Germany Guide
 # ================================================================
 @tool
 def germany_guide(topic: str) -> str:
-    """Provides guidance on German bureaucracy, settling in, and daily life topics.
+    """Gives practical guidance on German bureaucracy, settling in, and daily life.
     Args:
-        topic: What the user needs help with (e.g., 'Anmeldung', 'health insurance',
-               'opening bank account', 'just arrived checklist', 'renting a flat').
+        topic: The topic to get help with (e.g., 'health insurance', 'Anmeldung',
+               'opening bank account', 'renting a flat', 'visa', 'tax').
     """
-    return (
+    import requests, os
+    headers = {
+        "Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}",
+        "Content-Type": "application/json"
+    }
+    prompt = (
         f"A newcomer to Germany is asking about: '{topic}'.\n\n"
         f"Give them a warm, practical, straight-talking answer. "
-        f"Use short paragraphs — no walls of text. "
-        f"Where relevant, give a numbered step-by-step breakdown. "
-        f"Mention any important documents they need. "
-        f"Add one or two real tips that most official websites won't tell them "
-        f"(e.g. book Bürgeramt slots early, N26 is easiest for bank accounts, etc). "
+        f"Use short paragraphs. Where relevant, give numbered steps. "
+        f"Mention any documents they need. "
+        f"Add one insider tip most official websites won't mention. "
         f"End with one short encouraging sentence. "
-        f"Do NOT start with 'Certainly!' or 'Great question!' or 'As an AI'. "
-        f"Write like a knowledgeable friend who has lived in Germany, not a customer service bot."
+        f"Do NOT start with 'Certainly!', 'Great question!', or 'As an AI'. "
+        f"Write like a knowledgeable friend who has lived in Germany."
     )
+    response = requests.post(
+        "https://router.huggingface.co/v1/chat/completions",
+        headers=headers,
+        json={
+            "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 600,
+            "temperature": 0.7
+        }
+    )
+    if response.status_code == 200:
+        return response.json()["choices"][0]["message"]["content"]
+    return f"Could not fetch answer (status {response.status_code}). Try rephrasing."
 
 # ================================================================
-# 🗣️ TOOL 2 — German Language Coach
+# 🗣️ TOOL 2 — Language Coach
 # ================================================================
 @tool
 def language_coach(request: str) -> str:
-    """Teaches practical German phrases, grammar tips, or translations for real-life situations.
+    """Teaches practical German phrases, grammar, or cultural tips for real situations.
     Args:
         request: What language help is needed (e.g., 'phrases at the doctor',
-                 'how to say excuse me politely', 'translate this sentence',
-                 'explain du vs Sie', 'supermarket phrases').
+                 'how to say excuse me', 'explain du vs Sie', 'supermarket phrases').
     """
-    return (
+    import requests, os
+    headers = {
+        "Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}",
+        "Content-Type": "application/json"
+    }
+    prompt = (
         f"A newcomer to Germany needs language help with: '{request}'.\n\n"
-        f"Respond like a friendly language tutor — warm but direct. "
-        f"For phrases: give the German text, a simple pronunciation guide in brackets, "
-        f"and the English meaning. Group them naturally by situation. "
-        f"For grammar or translation questions: explain it simply with a real example. "
-        f"Add a small cultural note if it's useful "
-        f"(e.g. Germans say 'Mahlzeit' at lunchtime even to strangers). "
-        f"Keep it conversational — like texting a German friend who is also a teacher. "
+        f"Respond like a friendly language tutor. "
+        f"For phrases: give German text, pronunciation in brackets, English meaning. "
+        f"For grammar: explain simply with a real example. "
+        f"Add a small cultural note if useful. "
+        f"Keep it conversational — like a German friend who is also a teacher. "
         f"Never start with 'Certainly!' or 'Of course!' or 'As an AI'. "
-        f"Max 3 sentences of explanation before getting into the actual phrases or answer."
+        f"Max 2 sentences before getting into the actual phrases."
     )
+    response = requests.post(
+        "https://router.huggingface.co/v1/chat/completions",
+        headers=headers,
+        json={
+            "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 500,
+            "temperature": 0.7
+        }
+    )
+    if response.status_code == 200:
+        return response.json()["choices"][0]["message"]["content"]
+    return f"Could not fetch answer (status {response.status_code}). Try rephrasing."
 
 # ================================================================
-# 🔄 TOOL 3 — German ↔ English Translator
+# 🔄 TOOL 3 — Translator
 # ================================================================
 @tool
 def translate(text: str, direction: str) -> str:
-    """Translates text between German and English, with context explanation.
+    """Translates text between German and English with context.
     Args:
         text: The text to translate.
-        direction: Either 'de_to_en' (German to English) or 'en_to_de' (English to German).
+        direction: 'de_to_en' for German to English, 'en_to_de' for English to German,
+                   'auto' to detect automatically.
     """
+    import requests, os
+    headers = {
+        "Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}",
+        "Content-Type": "application/json"
+    }
     if direction == "de_to_en":
-        return (
-            f"Translate this German text to English: '{text}'\n\n"
-            f"Give the translation clearly first. "
-            f"Then in ONE sentence, explain any cultural or contextual nuance "
-            f"if the phrase means something beyond its literal translation "
-            f"(e.g. formal vs informal register, idioms, official jargon). "
-            f"If it's a straightforward translation with no special nuance, skip the explanation. "
-            f"Write naturally — not like a dictionary entry."
+        prompt = (
+            f"Translate this German text to English: '{text}'\n"
+            f"Give the translation first. Then in one sentence explain any cultural "
+            f"or contextual nuance if relevant. Skip the explanation if it's straightforward."
         )
     elif direction == "en_to_de":
-        return (
-            f"Translate this English text to German: '{text}'\n\n"
-            f"Give the translation clearly first. "
-            f"If there are two natural ways to say it (formal 'Sie' vs informal 'du'), "
-            f"show both and briefly explain when to use each. "
-            f"Add pronunciation guide in brackets if it's a tricky phrase. "
-            f"Write naturally — not like a dictionary entry."
+        prompt = (
+            f"Translate this English text to German: '{text}'\n"
+            f"Give the translation first. If there are formal (Sie) and informal (du) "
+            f"versions, show both briefly. Add pronunciation guide if it's tricky."
         )
     else:
-        return (
-            f"The user wants to translate '{text}' but didn't specify direction clearly. "
-            f"Detect the language automatically and translate it to the other language "
-            f"(German ↔ English). Explain which direction you translated and why."
+        prompt = (
+            f"Detect the language of '{text}' and translate it to the other language "
+            f"(German or English). State which direction you translated."
         )
+    response = requests.post(
+        "https://router.huggingface.co/v1/chat/completions",
+        headers=headers,
+        json={
+            "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 300,
+            "temperature": 0.5
+        }
+    )
+    if response.status_code == 200:
+        return response.json()["choices"][0]["message"]["content"]
+    return f"Could not translate (status {response.status_code}). Try rephrasing."
 
 # ================================================================
-# 📋 TOOL 4 — Situation Checklist Generator
+# 📋 TOOL 4 — Checklist Generator
 # ================================================================
 @tool
 def get_checklist(situation: str) -> str:
-    """Generates a practical checklist for common newcomer situations in Germany.
+    """Generates a practical checklist for newcomer situations in Germany.
     Args:
-        situation: The situation to get a checklist for (e.g., 'just arrived in Germany',
-                   'starting a new job', 'renting a flat', 'visiting a doctor',
-                   'opening a bank account').
+        situation: The situation to get a checklist for (e.g., 'just arrived',
+                   'starting a new job', 'renting a flat', 'opening a bank account').
     """
-    return (
+    import requests, os
+    headers = {
+        "Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}",
+        "Content-Type": "application/json"
+    }
+    prompt = (
         f"A newcomer to Germany needs a practical checklist for: '{situation}'.\n\n"
-        f"Give them a clear, numbered checklist. "
-        f"Split it into logical phases if needed (e.g. Before / During / After, "
-        f"or Week 1 / Week 2-4). "
-        f"For each item mention WHY it matters in one short phrase — "
-        f"not just what to do but why they shouldn't skip it. "
-        f"Include any useful website links (e.g. service.berlin.de, make-it-in-germany.com). "
-        f"One practical insider tip at the end that most newcomers learn too late. "
-        f"Tone: like a checklist your experienced expat friend emailed you before you moved. "
+        f"Give a clear numbered checklist split into logical phases (e.g. Week 1 / Week 2-4). "
+        f"For each item say briefly WHY it matters. "
+        f"Include useful website links where relevant. "
+        f"One insider tip at the end that most newcomers learn too late. "
+        f"Tone: like a checklist your experienced expat friend emailed you. "
         f"No corporate language. No 'It is important to note that...'"
     )
+    response = requests.post(
+        "https://router.huggingface.co/v1/chat/completions",
+        headers=headers,
+        json={
+            "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 600,
+            "temperature": 0.7
+        }
+    )
+    if response.status_code == 200:
+        return response.json()["choices"][0]["message"]["content"]
+    return f"Could not generate checklist (status {response.status_code}). Try rephrasing."
 
 # ================================================================
-# ⏰ TOOL 5 — Current Time in Any Timezone
+# ⏰ TOOL 5 — Timezone
 # ================================================================
 @tool
 def get_current_time_in_timezone(timezone: str) -> str:
     """Fetches the current local time in a specified timezone.
     Args:
-        timezone: A valid timezone string (e.g., 'Europe/Berlin', 'Asia/Kolkata').
+        timezone: A valid timezone string (e.g., 'Europe/Berlin').
     """
     try:
         tz = pytz.timezone(timezone)
         local_time = datetime.datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
-        return f"The current local time in {timezone} is: {local_time}"
+        return f"Current time in {timezone}: {local_time}"
     except Exception as e:
         return f"Couldn't fetch time for '{timezone}': {str(e)}"
 
 # ================================================================
-# 🤖 MODEL SETUP
+# 🤖 AGENT SETUP
 # ================================================================
+import os
 final_answer = FinalAnswerTool()
 
 model = HfApiModel(
-    max_tokens=2096,
-    temperature=0.7,   # slightly higher = more natural, less robotic
+    max_tokens=1024,
+    temperature=0.5,
     model_id='Qwen/Qwen2.5-Coder-32B-Instruct',
     custom_role_conversions=None,
 )
@@ -166,9 +221,6 @@ model = HfApiModel(
 with open("prompts.yaml", 'r') as stream:
     prompt_templates = yaml.safe_load(stream)
 
-# ================================================================
-# 🧠 AGENT — with system personality baked in via description
-# ================================================================
 agent = CodeAgent(
     model=model,
     tools=[
@@ -181,24 +233,22 @@ agent = CodeAgent(
         DuckDuckGoSearchTool(),
         get_current_time_in_timezone,
     ],
-    max_steps=6,
-    verbosity_level=1,
+    max_steps=3,        # ← reduced from 6, forces faster answers
+    verbosity_level=0,  # ← 0 = no internal logs shown
     grammar=None,
     planning_interval=None,
-    name="Wegweiser",  # German for "signpost / guide"
+    name="Wegweiser",
     description=(
-        "You are Wegweiser — a practical, warm, no-nonsense guide for people "
-        "settling into life in Germany. You help with bureaucracy, daily life, "
-        "German language, and cultural nuances. "
-        "You always run safety_check first on every user message before doing anything else. "
-        "If safety_check returns BLOCKED, stop immediately and return that message. "
-        "You speak like a knowledgeable friend — direct, helpful, occasionally a little dry humour — "
-        "never like a corporate chatbot. "
-        "You never start responses with 'Certainly!', 'Great question!', 'Of course!', or 'As an AI'. "
-        "You never use bullet point walls. You write in short, clear paragraphs. "
-        "You only help with topics related to Germany, German language, and expat life. "
-        "If someone asks something completely unrelated, politely redirect them. "
-        "Offensive, harmful, or inappropriate requests get a firm but friendly refusal."
+        "You are Wegweiser — a practical guide for newcomers in Germany. "
+        "ALWAYS run safety_check first. If it returns BLOCKED, stop immediately. "
+        "For ANY question about Germany, bureaucracy, or daily life: call germany_guide. "
+        "For language or phrases: call language_coach. "
+        "For translations: call translate. "
+        "For checklists: call get_checklist. "
+        "Call the right tool ONCE and return its output directly as the final answer. "
+        "Do NOT search the web unless the user explicitly asks for latest news. "
+        "Do NOT add your own commentary on top of the tool output. "
+        "Just return the tool result cleanly."
     ),
     prompt_templates=prompt_templates
 )
