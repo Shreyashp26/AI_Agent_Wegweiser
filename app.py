@@ -10,9 +10,8 @@ from Gradio_UI import GradioUI
 
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 
-# ================================================================
-# 🛡️ SAFETY CHECK
-# ================================================================
+
+# SAFETY CHECK
 @tool
 def safety_check(query: str) -> str:
     """Checks if a user query is appropriate. Always run this FIRST.
@@ -28,9 +27,8 @@ def safety_check(query: str) -> str:
         return "BLOCKED: That's outside what I help with. I'm here for Germany life and language questions — let's keep it useful!"
     return "SAFE"
 
-# ================================================================
-# 🏛️ TOOL 1 — Germany Guide
-# ================================================================
+# TOOL 1 — Germany Guide
+
 @tool
 def germany_guide(topic: str) -> str:
     """Gives practical guidance on German bureaucracy, settling in, and daily life.
@@ -66,9 +64,9 @@ def germany_guide(topic: str) -> str:
         return response.json()["choices"][0]["message"]["content"]
     return f"Could not fetch answer (status {response.status_code}). Try rephrasing."
 
-# ================================================================
-# 🗣️ TOOL 2 — Language Coach
-# ================================================================
+
+# TOOL 2 — Language Coach
+
 @tool
 def language_coach(request: str) -> str:
     """Teaches practical German phrases, grammar, or cultural tips for real situations.
@@ -104,9 +102,9 @@ def language_coach(request: str) -> str:
         return response.json()["choices"][0]["message"]["content"]
     return f"Could not fetch answer (status {response.status_code}). Try rephrasing."
 
-# ================================================================
-# 🔄 TOOL 3 — Translator
-# ================================================================
+
+# TOOL 3 — Translator
+
 @tool
 def translate(text: str, direction: str) -> str:
     """Translates text between German and English with context.
@@ -150,9 +148,9 @@ def translate(text: str, direction: str) -> str:
         return response.json()["choices"][0]["message"]["content"]
     return f"Could not translate (status {response.status_code}). Try rephrasing."
 
-# ================================================================
+
 # 📋 TOOL 4 — Checklist Generator
-# ================================================================
+
 @tool
 def get_checklist(situation: str) -> str:
     """Generates a practical checklist for newcomer situations in Germany.
@@ -187,9 +185,9 @@ def get_checklist(situation: str) -> str:
         return response.json()["choices"][0]["message"]["content"]
     return f"Could not generate checklist (status {response.status_code}). Try rephrasing."
 
-# ================================================================
-# ⏰ TOOL 5 — Timezone
-# ================================================================
+
+# TOOL 5 — Timezone
+
 @tool
 def get_current_time_in_timezone(timezone: str) -> str:
     """Fetches the current local time in a specified timezone.
@@ -203,9 +201,9 @@ def get_current_time_in_timezone(timezone: str) -> str:
     except Exception as e:
         return f"Couldn't fetch time for '{timezone}': {str(e)}"
 
-# ================================================================
-# 🤖 AGENT SETUP
-# ================================================================
+
+# AGENT SETUP
+
 final_answer = FinalAnswerTool()
 
 model = HfApiModel(
