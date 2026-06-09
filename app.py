@@ -1,5 +1,4 @@
-# Try this import first
-from smolagents import CodeAgent, DuckDuckGoSearchTool, InferenceClientModel, load_tool, tool
+from smolagents import CodeAgent, DuckDuckGoSearchTool, HfApiModel, load_tool, tool
 import datetime
 import requests
 import pytz
@@ -30,8 +29,7 @@ def get_current_time_in_timezone(timezone: str) -> str:
 
 final_answer = FinalAnswerTool()
 
-# ✅ Changed HfApiModel → InferenceClientModel
-model = InferenceClientModel(
+model = HfApiModel(
     max_tokens=2096,
     temperature=0.5,
     model_id='Qwen/Qwen2.5-Coder-32B-Instruct',
