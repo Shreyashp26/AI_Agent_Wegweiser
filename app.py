@@ -231,22 +231,21 @@ agent = CodeAgent(
         DuckDuckGoSearchTool(),
         get_current_time_in_timezone,
     ],
-    max_steps=3,
+    max_steps=4,
     verbosity_level=0,
     grammar=None,
     planning_interval=None,
     name="Wegweiser",
     description=(
         "You are Wegweiser — a practical guide for newcomers in Germany. "
-        "ALWAYS run safety_check first. If it returns BLOCKED, stop immediately. "
-        "For ANY question about Germany, bureaucracy, or daily life: call germany_guide. "
-        "For language or phrases: call language_coach. "
-        "For translations: call translate. "
-        "For checklists: call get_checklist. "
-        "Call the right tool ONCE and return its output directly as the final answer. "
-        "Do NOT search the web unless the user explicitly asks for latest news. "
-        "Do NOT add your own commentary on top of the tool output. "
-        "Just return the tool result cleanly."
+        "Step 1: ALWAYS call safety_check first with the user's query. "
+        "Step 2: Based on the topic, call EXACTLY ONE of these tools: "
+        "- germany_guide: for ANY question about Germany, bureaucracy, visas, insurance, banking, housing, tax "
+        "- language_coach: for German phrases, pronunciation, grammar, cultural tips "
+        "- translate: for translating text between German and English "
+        "- get_checklist: for step-by-step checklists about arriving, jobs, renting, banking "
+        "Step 3: Take the tool output and call final_answer with it immediately. "
+        "NEVER use web_search. NEVER skip calling a tool. NEVER add your own text."
     ),
     prompt_templates=prompt_templates
 )
