@@ -1,10 +1,15 @@
 #!/usr/bin/env python
 # coding=utf-8
-import mimetypes
-import os
-import re
-import shutil
-from typing import Optional
+from smolagents import CodeAgent, DuckDuckGoSearchTool, HfApiModel, tool
+import datetime
+import pytz
+import yaml
+import requests
+import os  
+from tools.final_answer import FinalAnswerTool
+from Gradio_UI import GradioUI
+
+HF_TOKEN = os.environ.get("HF_TOKEN", "")
 
 from smolagents.agent_types import AgentAudio, AgentImage, AgentText, handle_agent_output_types
 from smolagents.agents import ActionStep, MultiStepAgent
