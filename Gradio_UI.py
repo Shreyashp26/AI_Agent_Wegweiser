@@ -292,7 +292,7 @@ class GradioUI:
             gr.HTML("""
                 <div class="wegweiser-footer">
                     Built with smolagents · meta-llama · Hugging Face &nbsp;|&nbsp;
-                    Wegweiser means <em>"signpost"</em> in German &nbsp;🗺️
+                    Wegweiser means <em>"signpost"</em> in German &nbsp;🗺️ · Build By Shreyash Patil
                 </div>
             """)
 
