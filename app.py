@@ -3,7 +3,6 @@
 from smolagents import CodeAgent, DuckDuckGoSearchTool, HfApiModel, tool
 import datetime
 import pytz
-import yaml
 import requests
 import os
 from tools.final_answer import FinalAnswerTool
@@ -124,13 +123,13 @@ def translate(text: str, direction: str) -> str:
         prompt = (
             f"Translate this German text to English: '{text}'\n"
             f"Give the translation first. Then in one sentence explain any cultural "
-            f"nuance if relevant. Skip explanation if it's straightforward."
+            f"nuance if relevant. Skip explanation if straightforward."
         )
     elif direction == "en_to_de":
         prompt = (
             f"Translate this English text to German: '{text}'\n"
             f"Give the translation first. If there are formal (Sie) and informal (du) "
-            f"versions, show both briefly. Add pronunciation guide if it's tricky."
+            f"versions, show both briefly. Add pronunciation guide if tricky."
         )
     else:
         prompt = (
@@ -216,9 +215,6 @@ model = HfApiModel(
     custom_role_conversions=None,
 )
 
-with open("prompts.yaml", 'r') as stream:
-    prompt_templates = yaml.safe_load(stream)
-
 agent = CodeAgent(
     model=model,
     tools=[
@@ -240,13 +236,14 @@ agent = CodeAgent(
         "You are Wegweiser — a practical guide for newcomers in Germany. "
         "Step 1: ALWAYS call safety_check first with the user's query. "
         "Step 2: Based on the topic, call EXACTLY ONE of these tools: "
-        "- germany_guide: for ANY question about Germany, bureaucracy, visas, insurance, banking, housing, tax. "
-        "- language_coach: for German phrases, pronunciation, grammar, cultural tips. "
-        "- translate: for translating text between German and English. "
-        "- get_checklist: for step-by-step checklists about arriving, jobs, renting, banking. "
-        "Step 3: Take the tool output and call final_answer with it immediately. "
-        "NEVER use web_search. NEVER skip calling a tool. NEVER add your own text."
+        "germany_guide for Germany/bureaucracy/daily life questions, "
+        "language_coach for German phrases/pronunciation/grammar, "
+        "translate for translating between German and English, "
+        "get_checklist for step-by-step checklists. "
+        "Step 3: Call final_answer immediately with the tool output. "
+        "NEVER use web_search. NEVER add your own commentary."
     ),
     prompt_templates=None,
 )
+
 GradioUI(agent).launch()
