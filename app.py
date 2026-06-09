@@ -1,8 +1,11 @@
+#!/usr/bin/env python
+# coding=utf-8
 from smolagents import CodeAgent, DuckDuckGoSearchTool, HfApiModel, tool
 import datetime
 import pytz
 import yaml
 import requests
+import os
 from tools.final_answer import FinalAnswerTool
 from Gradio_UI import GradioUI
 
@@ -36,7 +39,6 @@ def germany_guide(topic: str) -> str:
         topic: The topic to get help with (e.g., 'health insurance', 'Anmeldung',
                'opening bank account', 'renting a flat', 'visa', 'tax').
     """
-    import requests, os
     headers = {
         "Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}",
         "Content-Type": "application/json"
@@ -75,7 +77,6 @@ def language_coach(request: str) -> str:
         request: What language help is needed (e.g., 'phrases at the doctor',
                  'how to say excuse me', 'explain du vs Sie', 'supermarket phrases').
     """
-    import requests, os
     headers = {
         "Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}",
         "Content-Type": "application/json"
@@ -115,7 +116,6 @@ def translate(text: str, direction: str) -> str:
         direction: 'de_to_en' for German to English, 'en_to_de' for English to German,
                    'auto' to detect automatically.
     """
-    import requests, os
     headers = {
         "Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}",
         "Content-Type": "application/json"
@@ -124,7 +124,7 @@ def translate(text: str, direction: str) -> str:
         prompt = (
             f"Translate this German text to English: '{text}'\n"
             f"Give the translation first. Then in one sentence explain any cultural "
-            f"or contextual nuance if relevant. Skip the explanation if it's straightforward."
+            f"nuance if relevant. Skip explanation if it's straightforward."
         )
     elif direction == "en_to_de":
         prompt = (
@@ -161,7 +161,6 @@ def get_checklist(situation: str) -> str:
         situation: The situation to get a checklist for (e.g., 'just arrived',
                    'starting a new job', 'renting a flat', 'opening a bank account').
     """
-    import requests, os
     headers = {
         "Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}",
         "Content-Type": "application/json"
@@ -173,7 +172,7 @@ def get_checklist(situation: str) -> str:
         f"Include useful website links where relevant. "
         f"One insider tip at the end that most newcomers learn too late. "
         f"Tone: like a checklist your experienced expat friend emailed you. "
-        f"No corporate language. No 'It is important to note that...'"
+        f"No corporate language."
     )
     response = requests.post(
         "https://router.huggingface.co/v1/chat/completions",
@@ -208,7 +207,6 @@ def get_current_time_in_timezone(timezone: str) -> str:
 # ================================================================
 # 🤖 AGENT SETUP
 # ================================================================
-import os
 final_answer = FinalAnswerTool()
 
 model = HfApiModel(
@@ -233,8 +231,8 @@ agent = CodeAgent(
         DuckDuckGoSearchTool(),
         get_current_time_in_timezone,
     ],
-    max_steps=3,        # ← reduced from 6, forces faster answers
-    verbosity_level=0,  # ← 0 = no internal logs shown
+    max_steps=3,
+    verbosity_level=0,
     grammar=None,
     planning_interval=None,
     name="Wegweiser",
