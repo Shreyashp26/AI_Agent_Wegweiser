@@ -1,254 +1,362 @@
 #!/usr/bin/env python
 # coding=utf-8
-from smolagents import CodeAgent, DuckDuckGoSearchTool, HfApiModel, tool
-import datetime
-import pytz
-import yaml
-import requests
+import mimetypes
 import os
-from tools.final_answer import FinalAnswerTool
-from Gradio_UI import GradioUI
+import re
+import shutil
+from typing import Optional
 
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
+from smolagents.agent_types import AgentAudio, AgentImage, AgentText, handle_agent_output_types
+from smolagents.agents import ActionStep, MultiStepAgent
+from smolagents.memory import MemoryStep
+from smolagents.utils import _is_package_available
 
-# ================================================================
-# 🛡️ SAFETY CHECK
-# ================================================================
-@tool
-def safety_check(query: str) -> str:
-    """Checks if a user query is appropriate. Always run this FIRST.
-    Args:
-        query: The user's message to check.
-    """
-    blocked = [
-        "hate", "kill", "weapon", "drug", "racist", "porn",
-        "illegal", "bomb", "terror", "violence", "abuse",
-        "sex", "nude", "hack", "steal", "fraud"
-    ]
-    if any(word in query.lower() for word in blocked):
-        return "BLOCKED: That's outside what I help with. I'm here for Germany life and language questions — let's keep it useful!"
-    return "SAFE"
 
-# ================================================================
-# 🏛️ TOOL 1 — Germany Guide
-# ================================================================
-@tool
-def germany_guide(topic: str) -> str:
-    """Gives practical guidance on German bureaucracy, settling in, and daily life.
-    Args:
-        topic: The topic to get help with (e.g., 'health insurance', 'Anmeldung',
-               'opening bank account', 'renting a flat', 'visa', 'tax').
-    """
-    headers = {
-        "Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}",
-        "Content-Type": "application/json"
-    }
-    prompt = (
-        f"A newcomer to Germany is asking about: '{topic}'.\n\n"
-        f"Give them a warm, practical, straight-talking answer. "
-        f"Use short paragraphs. Where relevant, give numbered steps. "
-        f"Mention any documents they need. "
-        f"Add one insider tip most official websites won't mention. "
-        f"End with one short encouraging sentence. "
-        f"Do NOT start with 'Certainly!', 'Great question!', or 'As an AI'. "
-        f"Write like a knowledgeable friend who has lived in Germany."
-    )
-    response = requests.post(
-        "https://router.huggingface.co/v1/chat/completions",
-        headers=headers,
-        json={
-            "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 600,
-            "temperature": 0.7
-        }
-    )
-    if response.status_code == 200:
-        return response.json()["choices"][0]["message"]["content"]
-    return f"Could not fetch answer (status {response.status_code}). Try rephrasing."
+def pull_messages_from_step(step_log: MemoryStep):
+    """Extract ChatMessage objects from agent steps"""
+    import gradio as gr
 
-# ================================================================
-# 🗣️ TOOL 2 — Language Coach
-# ================================================================
-@tool
-def language_coach(request: str) -> str:
-    """Teaches practical German phrases, grammar, or cultural tips for real situations.
-    Args:
-        request: What language help is needed (e.g., 'phrases at the doctor',
-                 'how to say excuse me', 'explain du vs Sie', 'supermarket phrases').
-    """
-    headers = {
-        "Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}",
-        "Content-Type": "application/json"
-    }
-    prompt = (
-        f"A newcomer to Germany needs language help with: '{request}'.\n\n"
-        f"Respond like a friendly language tutor. "
-        f"For phrases: give German text, pronunciation in brackets, English meaning. "
-        f"For grammar: explain simply with a real example. "
-        f"Add a small cultural note if useful. "
-        f"Keep it conversational — like a German friend who is also a teacher. "
-        f"Never start with 'Certainly!' or 'Of course!' or 'As an AI'. "
-        f"Max 2 sentences before getting into the actual phrases."
-    )
-    response = requests.post(
-        "https://router.huggingface.co/v1/chat/completions",
-        headers=headers,
-        json={
-            "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 500,
-            "temperature": 0.7
-        }
-    )
-    if response.status_code == 200:
-        return response.json()["choices"][0]["message"]["content"]
-    return f"Could not fetch answer (status {response.status_code}). Try rephrasing."
+    if isinstance(step_log, ActionStep):
+        if hasattr(step_log, "tool_calls") and step_log.tool_calls is not None:
+            first_tool_call = step_log.tool_calls[0]
+            used_code = first_tool_call.name == "python_interpreter"
+            parent_id = f"call_{len(step_log.tool_calls)}"
 
-# ================================================================
-# 🔄 TOOL 3 — Translator
-# ================================================================
-@tool
-def translate(text: str, direction: str) -> str:
-    """Translates text between German and English with context.
-    Args:
-        text: The text to translate.
-        direction: 'de_to_en' for German to English, 'en_to_de' for English to German,
-                   'auto' to detect automatically.
-    """
-    headers = {
-        "Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}",
-        "Content-Type": "application/json"
-    }
-    if direction == "de_to_en":
-        prompt = (
-            f"Translate this German text to English: '{text}'\n"
-            f"Give the translation first. Then in one sentence explain any cultural "
-            f"nuance if relevant. Skip explanation if it's straightforward."
+            args = first_tool_call.arguments
+            if isinstance(args, dict):
+                content = str(args.get("answer", str(args)))
+            else:
+                content = str(args).strip()
+
+            if used_code:
+                content = re.sub(r"```.*?\n", "", content)
+                content = re.sub(r"\s*<end_code>\s*", "", content)
+                content = content.strip()
+                if not content.startswith("```python"):
+                    content = f"```python\n{content}\n```"
+
+            parent_message_tool = gr.ChatMessage(
+                role="assistant",
+                content=content,
+                metadata={
+                    "title": f"🛠️ Used tool {first_tool_call.name}",
+                    "id": parent_id,
+                    "status": "pending",
+                },
+            )
+            yield parent_message_tool
+
+            if hasattr(step_log, "observations") and (
+                step_log.observations is not None and step_log.observations.strip()
+            ):
+                log_content = step_log.observations.strip()
+                if log_content:
+                    log_content = re.sub(r"^Execution logs:\s*", "", log_content)
+                    yield gr.ChatMessage(
+                        role="assistant",
+                        content=f"{log_content}",
+                        metadata={"title": "📝 Execution Logs", "parent_id": parent_id, "status": "done"},
+                    )
+
+            if hasattr(step_log, "error") and step_log.error is not None:
+                yield gr.ChatMessage(
+                    role="assistant",
+                    content=str(step_log.error),
+                    metadata={"title": "💥 Error", "parent_id": parent_id, "status": "done"},
+                )
+
+            parent_message_tool.metadata["status"] = "done"
+
+        elif hasattr(step_log, "error") and step_log.error is not None:
+            yield gr.ChatMessage(
+                role="assistant",
+                content=str(step_log.error),
+                metadata={"title": "💥 Error"}
+            )
+
+
+def stream_to_gradio(
+    agent,
+    task: str,
+    reset_agent_memory: bool = False,
+    additional_args: Optional[dict] = None,
+):
+    if not _is_package_available("gradio"):
+        raise ModuleNotFoundError(
+            "Please install 'gradio' extra to use the GradioUI: `pip install 'smolagents[gradio]'`"
         )
-    elif direction == "en_to_de":
-        prompt = (
-            f"Translate this English text to German: '{text}'\n"
-            f"Give the translation first. If there are formal (Sie) and informal (du) "
-            f"versions, show both briefly. Add pronunciation guide if it's tricky."
+    import gradio as gr
+
+    for step_log in agent.run(task, stream=True, reset=reset_agent_memory, additional_args=additional_args):
+        if hasattr(agent.model, "last_input_token_count"):
+            if isinstance(step_log, ActionStep):
+                step_log.input_token_count = agent.model.last_input_token_count
+                step_log.output_token_count = agent.model.last_output_token_count
+
+        for message in pull_messages_from_step(step_log):
+            yield message
+
+    final_answer = step_log
+    final_answer = handle_agent_output_types(final_answer)
+
+    if isinstance(final_answer, AgentText):
+        yield gr.ChatMessage(
+            role="assistant",
+            content=final_answer.to_string(),
+        )
+    elif isinstance(final_answer, AgentImage):
+        yield gr.ChatMessage(
+            role="assistant",
+            content={"path": final_answer.to_string(), "mime_type": "image/png"},
+        )
+    elif isinstance(final_answer, AgentAudio):
+        yield gr.ChatMessage(
+            role="assistant",
+            content={"path": final_answer.to_string(), "mime_type": "audio/wav"},
         )
     else:
-        prompt = (
-            f"Detect the language of '{text}' and translate it to the other language "
-            f"(German or English). State which direction you translated."
+        yield gr.ChatMessage(role="assistant", content=str(final_answer))
+
+
+class GradioUI:
+    """Custom Wegweiser UI"""
+
+    def __init__(self, agent: MultiStepAgent, file_upload_folder: str | None = None):
+        if not _is_package_available("gradio"):
+            raise ModuleNotFoundError(
+                "Please install 'gradio' extra to use the GradioUI: `pip install 'smolagents[gradio]'`"
+            )
+        self.agent = agent
+        self.file_upload_folder = file_upload_folder
+        if self.file_upload_folder is not None:
+            if not os.path.exists(file_upload_folder):
+                os.mkdir(file_upload_folder)
+
+    def interact_with_agent(self, prompt, messages):
+        import gradio as gr
+
+        messages.append(gr.ChatMessage(role="user", content=prompt))
+        yield messages
+
+        final_response = ""
+        for msg in stream_to_gradio(self.agent, task=prompt, reset_agent_memory=False):
+            if hasattr(msg, "content") and isinstance(msg.content, str):
+                if msg.content.startswith("**Step"):
+                    continue
+                if msg.content.strip() == "-----":
+                    continue
+                if "<span style=" in msg.content:
+                    continue
+                if hasattr(msg, "metadata") and msg.metadata:
+                    continue
+                content = msg.content.replace("**Final answer:**", "").strip()
+                if content:
+                    final_response = content
+
+        if final_response:
+            messages.append(gr.ChatMessage(role="assistant", content=final_response))
+
+        yield messages
+
+    def log_user_message(self, text_input, file_uploads_log):
+        return (
+            text_input + (
+                f"\nYou have been provided with these files, which might be helpful or not: {file_uploads_log}"
+                if len(file_uploads_log) > 0
+                else ""
+            ),
+            "",
         )
-    response = requests.post(
-        "https://router.huggingface.co/v1/chat/completions",
-        headers=headers,
-        json={
-            "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 300,
-            "temperature": 0.5
+
+    def launch(self, **kwargs):
+        import gradio as gr
+
+        custom_css = """
+        .gradio-container {
+            background: linear-gradient(135deg, #0f1923 0%, #1a2a3a 100%) !important;
+            font-family: 'Segoe UI', sans-serif !important;
         }
-    )
-    if response.status_code == 200:
-        return response.json()["choices"][0]["message"]["content"]
-    return f"Could not translate (status {response.status_code}). Try rephrasing."
-
-# ================================================================
-# 📋 TOOL 4 — Checklist Generator
-# ================================================================
-@tool
-def get_checklist(situation: str) -> str:
-    """Generates a practical checklist for newcomer situations in Germany.
-    Args:
-        situation: The situation to get a checklist for (e.g., 'just arrived',
-                   'starting a new job', 'renting a flat', 'opening a bank account').
-    """
-    headers = {
-        "Authorization": f"Bearer {os.environ.get('HF_TOKEN', '')}",
-        "Content-Type": "application/json"
-    }
-    prompt = (
-        f"A newcomer to Germany needs a practical checklist for: '{situation}'.\n\n"
-        f"Give a clear numbered checklist split into logical phases (e.g. Week 1 / Week 2-4). "
-        f"For each item say briefly WHY it matters. "
-        f"Include useful website links where relevant. "
-        f"One insider tip at the end that most newcomers learn too late. "
-        f"Tone: like a checklist your experienced expat friend emailed you. "
-        f"No corporate language."
-    )
-    response = requests.post(
-        "https://router.huggingface.co/v1/chat/completions",
-        headers=headers,
-        json={
-            "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 600,
-            "temperature": 0.7
+        .wegweiser-header {
+            text-align: center;
+            padding: 32px 20px 16px 20px;
         }
-    )
-    if response.status_code == 200:
-        return response.json()["choices"][0]["message"]["content"]
-    return f"Could not generate checklist (status {response.status_code}). Try rephrasing."
+        .wegweiser-title {
+            font-size: 2.8rem;
+            font-weight: 800;
+            color: #ffffff;
+            letter-spacing: -0.5px;
+            margin: 0;
+        }
+        .wegweiser-title span {
+            color: #F5A623;
+        }
+        .wegweiser-subtitle {
+            font-size: 1rem;
+            color: #8a9bb0;
+            margin-top: 6px;
+            margin-bottom: 0;
+        }
+        .wegweiser-flag {
+            font-size: 1.8rem;
+            margin-bottom: 6px;
+        }
+        .suggestions-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            padding: 16px 20px;
+        }
+        .suggestion-card {
+            background: #1e2d3d;
+            border: 1px solid #2a3f55;
+            border-radius: 12px;
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            max-width: 220px;
+            text-align: left;
+        }
+        .suggestion-card:hover {
+            background: #243547;
+            border-color: #F5A623;
+            transform: translateY(-2px);
+        }
+        .suggestion-icon {
+            font-size: 1.3rem;
+            margin-bottom: 4px;
+        }
+        .suggestion-text {
+            font-size: 0.82rem;
+            color: #c5d3e0;
+            line-height: 1.3;
+        }
+        .chatbot-wrap {
+            border-radius: 16px !important;
+            border: 1px solid #2a3f55 !important;
+            background: #131f2b !important;
+        }
+        .input-row textarea {
+            background: #1a2a3a !important;
+            border: 1px solid #2a3f55 !important;
+            border-radius: 12px !important;
+            color: #e8f0f7 !important;
+            font-size: 0.95rem !important;
+        }
+        .input-row textarea:focus {
+            border-color: #F5A623 !important;
+        }
+        .wegweiser-footer {
+            text-align: center;
+            padding: 12px;
+            color: #4a6070;
+            font-size: 0.78rem;
+        }
+        """
 
-# ================================================================
-# ⏰ TOOL 5 — Timezone
-# ================================================================
-@tool
-def get_current_time_in_timezone(timezone: str) -> str:
-    """Fetches the current local time in a specified timezone.
-    Args:
-        timezone: A valid timezone string (e.g., 'Europe/Berlin').
-    """
-    try:
-        tz = pytz.timezone(timezone)
-        local_time = datetime.datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
-        return f"Current time in {timezone}: {local_time}"
-    except Exception as e:
-        return f"Couldn't fetch time for '{timezone}': {str(e)}"
+        with gr.Blocks(
+            fill_height=True,
+            css=custom_css,
+            title="Wegweiser — Germany Newcomer Guide"
+        ) as demo:
 
-# ================================================================
-# 🤖 AGENT SETUP
-# ================================================================
-final_answer = FinalAnswerTool()
+            stored_messages = gr.State([])
+            file_uploads_log = gr.State([])
 
-model = HfApiModel(
-    max_tokens=1024,
-    temperature=0.5,
-    model_id='Qwen/Qwen2.5-Coder-32B-Instruct',
-    custom_role_conversions=None,
-)
+            gr.HTML("""
+                <div class="wegweiser-header">
+                    <div class="wegweiser-flag">🇩🇪</div>
+                    <h1 class="wegweiser-title">Weg<span>weiser</span></h1>
+                    <p class="wegweiser-subtitle">
+                        Your no-nonsense guide to settling into Germany —
+                        bureaucracy, daily life, and survival German, all in one place.
+                    </p>
+                </div>
+            """)
 
-with open("prompts.yaml", 'r') as stream:
-    prompt_templates = yaml.safe_load(stream)
+            gr.HTML("""
+                <div class="suggestions-row">
+                    <div class="suggestion-card" onclick="document.querySelector('textarea').value=this.querySelector('.suggestion-text').innerText; document.querySelector('textarea').dispatchEvent(new Event('input'))">
+                        <div class="suggestion-icon">🏛️</div>
+                        <div class="suggestion-text">I just arrived in Germany. What should I do first?</div>
+                    </div>
+                    <div class="suggestion-card" onclick="document.querySelector('textarea').value=this.querySelector('.suggestion-text').innerText; document.querySelector('textarea').dispatchEvent(new Event('input'))">
+                        <div class="suggestion-icon">📋</div>
+                        <div class="suggestion-text">What is Anmeldung and how do I complete it?</div>
+                    </div>
+                    <div class="suggestion-card" onclick="document.querySelector('textarea').value=this.querySelector('.suggestion-text').innerText; document.querySelector('textarea').dispatchEvent(new Event('input'))">
+                        <div class="suggestion-icon">🏥</div>
+                        <div class="suggestion-text">How does health insurance work in Germany?</div>
+                    </div>
+                    <div class="suggestion-card" onclick="document.querySelector('textarea').value=this.querySelector('.suggestion-text').innerText; document.querySelector('textarea').dispatchEvent(new Event('input'))">
+                        <div class="suggestion-icon">🗣️</div>
+                        <div class="suggestion-text">Give me German phrases for visiting a doctor</div>
+                    </div>
+                    <div class="suggestion-card" onclick="document.querySelector('textarea').value=this.querySelector('.suggestion-text').innerText; document.querySelector('textarea').dispatchEvent(new Event('input'))">
+                        <div class="suggestion-icon">🔄</div>
+                        <div class="suggestion-text">Translate: Ich verstehe das nicht</div>
+                    </div>
+                    <div class="suggestion-card" onclick="document.querySelector('textarea').value=this.querySelector('.suggestion-text').innerText; document.querySelector('textarea').dispatchEvent(new Event('input'))">
+                        <div class="suggestion-icon">🏦</div>
+                        <div class="suggestion-text">How do I open a bank account in Germany?</div>
+                    </div>
+                    <div class="suggestion-card" onclick="document.querySelector('textarea').value=this.querySelector('.suggestion-text').innerText; document.querySelector('textarea').dispatchEvent(new Event('input'))">
+                        <div class="suggestion-icon">💼</div>
+                        <div class="suggestion-text">What do I need before starting a new job?</div>
+                    </div>
+                    <div class="suggestion-card" onclick="document.querySelector('textarea').value=this.querySelector('.suggestion-text').innerText; document.querySelector('textarea').dispatchEvent(new Event('input'))">
+                        <div class="suggestion-icon">🏠</div>
+                        <div class="suggestion-text">What documents do I need to rent a flat?</div>
+                    </div>
+                </div>
+            """)
 
-agent = CodeAgent(
-    model=model,
-    tools=[
-        final_answer,
-        safety_check,
-        germany_guide,
-        language_coach,
-        translate,
-        get_checklist,
-        DuckDuckGoSearchTool(),
-        get_current_time_in_timezone,
-    ],
-    max_steps=3,
-    verbosity_level=0,
-    grammar=None,
-    planning_interval=None,
-    name="Wegweiser",
-    description=(
-        "You are Wegweiser — a practical guide for newcomers in Germany. "
-        "ALWAYS run safety_check first. If it returns BLOCKED, stop immediately. "
-        "For ANY question about Germany, bureaucracy, or daily life: call germany_guide. "
-        "For language or phrases: call language_coach. "
-        "For translations: call translate. "
-        "For checklists: call get_checklist. "
-        "Call the right tool ONCE and return its output directly as the final answer. "
-        "Do NOT search the web unless the user explicitly asks for latest news. "
-        "Do NOT add your own commentary on top of the tool output. "
-        "Just return the tool result cleanly."
-    ),
-    prompt_templates=prompt_templates
-)
+            chatbot = gr.Chatbot(
+                label="",
+                type="messages",
+                avatar_images=(
+                    None,
+                    "https://huggingface.co/datasets/agents-course/course-images/resolve/main/en/communication/Alfred.png",
+                ),
+                resizable=True,
+                scale=1,
+                elem_classes=["chatbot-wrap"],
+                placeholder=(
+                    "<div style='text-align:center; color:#4a6070; padding: 40px 20px;'>"
+                    "<div style='font-size:2.5rem'>🗺️</div>"
+                    "<div style='font-size:1rem; margin-top:8px;'>Ask me anything about life in Germany.<br>"
+                    "Click a card above or type your question below.</div>"
+                    "</div>"
+                ),
+            )
 
-GradioUI(agent).launch()
+            with gr.Row(elem_classes=["input-row"]):
+                text_input = gr.Textbox(
+                    lines=1,
+                    placeholder="Ask about Anmeldung, health insurance, German phrases, translations...",
+                    label="",
+                    scale=9,
+                    container=False,
+                )
+
+            gr.HTML("""
+                <div class="wegweiser-footer">
+                    Built with smolagents · Qwen2.5 · Hugging Face &nbsp;|&nbsp;
+                    Wegweiser means <em>"signpost"</em> in German &nbsp;🗺️
+                </div>
+            """)
+
+            text_input.submit(
+                self.log_user_message,
+                [text_input, file_uploads_log],
+                [stored_messages, text_input],
+            ).then(
+                self.interact_with_agent,
+                [stored_messages, chatbot],
+                [chatbot]
+            )
+
+        demo.launch(debug=True, share=True, **kwargs)
+
+
+__all__ = ["stream_to_gradio", "GradioUI"]
