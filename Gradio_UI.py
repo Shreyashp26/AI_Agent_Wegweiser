@@ -133,31 +133,52 @@ class GradioUI:
                 os.mkdir(file_upload_folder)
 
     def interact_with_agent(self, prompt, messages):
-        import gradio as gr
+    import gradio as gr
 
-        messages.append(gr.ChatMessage(role="user", content=prompt))
-        yield messages
+    messages.append(gr.ChatMessage(role="user", content=prompt))
+    yield messages
 
-        final_response = ""
-        for msg in stream_to_gradio(self.agent, task=prompt, reset_agent_memory=False):
-            if hasattr(msg, "content") and isinstance(msg.content, str):
+    final_response = ""
+    for msg in stream_to_gradio(self.agent, task=prompt, reset_agent_memory=False):
+        if hasattr(msg, "content"):
+            # Skip tool call messages
+            if hasattr(msg, "metadata") and msg.metadata:
+                continue
+
+            content = msg.content
+
+            # Handle string content
+            if isinstance(content, str):
                 if msg.content.startswith("**Step"):
                     continue
                 if msg.content.strip() == "-----":
                     continue
                 if "<span style=" in msg.content:
                     continue
-                if hasattr(msg, "metadata") and msg.metadata:
-                    continue
-                content = msg.content.replace("**Final answer:**", "").strip()
+
+                # ✅ Strip the FinalAnswerStep wrapper
+                if "FinalAnswerStep(final_answer=" in content:
+                    import re
+                    match = re.search(r"FinalAnswerStep\(final_answer=['\"](.+)['\"]\)$", content, re.DOTALL)
+                    if match:
+                        content = match.group(1)
+                    else:
+                        # fallback — strip the wrapper manually
+                        content = content.replace("FinalAnswerStep(final_answer=", "").strip().strip("'\")")
+
+                # Strip "Final answer:" prefix
+                content = content.replace("**Final answer:**", "").strip()
+
+                # ✅ Fix escaped newlines so they render properly
+                content = content.replace("\\n", "\n")
+
                 if content:
                     final_response = content
 
-        if final_response:
-            messages.append(gr.ChatMessage(role="assistant", content=final_response))
+    if final_response:
+        messages.append(gr.ChatMessage(role="assistant", content=final_response))
 
-        yield messages
-
+    yield messages
     def log_user_message(self, text_input, file_uploads_log):
         return (
             text_input + (
