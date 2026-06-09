@@ -57,7 +57,7 @@ def germany_guide(topic: str) -> str:
         "https://router.huggingface.co/v1/chat/completions",
         headers=headers,
         json={
-            "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "model": "Qwen/Qwen2.5-72B-Instruct",
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 600,
             "temperature": 0.7
@@ -95,7 +95,7 @@ def language_coach(request: str) -> str:
         "https://router.huggingface.co/v1/chat/completions",
         headers=headers,
         json={
-            "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "model": "Qwen/Qwen2.5-72B-Instruct",
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 500,
             "temperature": 0.7
@@ -141,7 +141,7 @@ def translate(text: str, direction: str) -> str:
         "https://router.huggingface.co/v1/chat/completions",
         headers=headers,
         json={
-            "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "model": "Qwen/Qwen2.5-72B-Instruct",
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 300,
             "temperature": 0.5
@@ -178,7 +178,7 @@ def get_checklist(situation: str) -> str:
         "https://router.huggingface.co/v1/chat/completions",
         headers=headers,
         json={
-            "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "model": "Qwen/Qwen2.5-72B-Instruct",
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": 600,
             "temperature": 0.7
@@ -212,7 +212,7 @@ final_answer = FinalAnswerTool()
 model = HfApiModel(
     max_tokens=1024,
     temperature=0.5,
-    model_id='Qwen/Qwen2.5-Coder-32B-Instruct',
+    model_id='https://pflgm2locj2t89co.us-east-1.aws.endpoints.huggingface.cloud',
     custom_role_conversions=None,
 )
 
