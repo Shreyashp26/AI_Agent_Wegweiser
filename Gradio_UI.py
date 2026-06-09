@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 # coding=utf-8
-import mimetypes
 import os
 import re
-import shutil
 from typing import Optional
 
 from smolagents.agent_types import AgentAudio, AgentImage, AgentText, handle_agent_output_types
@@ -13,86 +11,56 @@ from smolagents.utils import _is_package_available
 
 
 def pull_messages_from_step(step_log: MemoryStep):
-    """Extract ChatMessage objects from agent steps"""
     import gradio as gr
-
     if isinstance(step_log, ActionStep):
         if hasattr(step_log, "tool_calls") and step_log.tool_calls is not None:
             first_tool_call = step_log.tool_calls[0]
             used_code = first_tool_call.name == "python_interpreter"
             parent_id = f"call_{len(step_log.tool_calls)}"
-
             args = first_tool_call.arguments
             if isinstance(args, dict):
                 content = str(args.get("answer", str(args)))
             else:
                 content = str(args).strip()
-
             if used_code:
                 content = re.sub(r"```.*?\n", "", content)
                 content = re.sub(r"\s*<end_code>\s*", "", content)
                 content = content.strip()
                 if not content.startswith("```python"):
                     content = f"```python\n{content}\n```"
-
             parent_message_tool = gr.ChatMessage(
                 role="assistant",
                 content=content,
-                metadata={
-                    "title": f"🛠️ Used tool {first_tool_call.name}",
-                    "id": parent_id,
-                    "status": "pending",
-                },
+                metadata={"title": f"🛠️ Used tool {first_tool_call.name}", "id": parent_id, "status": "pending"},
             )
             yield parent_message_tool
-
-            if hasattr(step_log, "observations") and (
-                step_log.observations is not None and step_log.observations.strip()
-            ):
-                log_content = step_log.observations.strip()
-                if log_content:
-                    log_content = re.sub(r"^Execution logs:\s*", "", log_content)
-                    yield gr.ChatMessage(
-                        role="assistant",
-                        content=f"{log_content}",
-                        metadata={"title": "📝 Execution Logs", "parent_id": parent_id, "status": "done"},
-                    )
-
+            if hasattr(step_log, "observations") and step_log.observations and step_log.observations.strip():
+                log_content = re.sub(r"^Execution logs:\s*", "", step_log.observations.strip())
+                yield gr.ChatMessage(
+                    role="assistant",
+                    content=log_content,
+                    metadata={"title": "📝 Execution Logs", "parent_id": parent_id, "status": "done"},
+                )
             if hasattr(step_log, "error") and step_log.error is not None:
                 yield gr.ChatMessage(
                     role="assistant",
                     content=str(step_log.error),
                     metadata={"title": "💥 Error", "parent_id": parent_id, "status": "done"},
                 )
-
             parent_message_tool.metadata["status"] = "done"
-
         elif hasattr(step_log, "error") and step_log.error is not None:
-            yield gr.ChatMessage(
-                role="assistant",
-                content=str(step_log.error),
-                metadata={"title": "💥 Error"}
-            )
+            yield gr.ChatMessage(role="assistant", content=str(step_log.error), metadata={"title": "💥 Error"})
 
 
-def stream_to_gradio(
-    agent,
-    task: str,
-    reset_agent_memory: bool = False,
-    additional_args: Optional[dict] = None,
-):
+def stream_to_gradio(agent, task: str, reset_agent_memory: bool = False, additional_args: Optional[dict] = None):
     if not _is_package_available("gradio"):
-        raise ModuleNotFoundError(
-            "Please install 'gradio' extra to use the GradioUI: `pip install 'smolagents[gradio]'`"
-        )
+        raise ModuleNotFoundError("Please install 'gradio' extra to use the GradioUI: `pip install 'smolagents[gradio]'`")
     import gradio as gr
 
     for step_log in agent.run(task, stream=True, reset=reset_agent_memory, additional_args=additional_args):
-        if hasattr(agent.model, "last_input_token_count"):
-            if isinstance(step_log, ActionStep):
-                step_log.input_token_count = agent.model.last_input_token_count
-                step_log.output_token_count = agent.model.last_output_token_count
-
+        if hasattr(agent.model, "last_input_token_count") and isinstance(step_log, ActionStep):
+            step_log.input_token_count = agent.model.last_input_token_count
+            step_log.output_token_count = agent.model.last_output_token_count
         for message in pull_messages_from_step(step_log):
             yield message
 
@@ -100,32 +68,19 @@ def stream_to_gradio(
     final_answer = handle_agent_output_types(final_answer)
 
     if isinstance(final_answer, AgentText):
-        yield gr.ChatMessage(
-            role="assistant",
-            content=final_answer.to_string(),
-        )
+        yield gr.ChatMessage(role="assistant", content=final_answer.to_string())
     elif isinstance(final_answer, AgentImage):
-        yield gr.ChatMessage(
-            role="assistant",
-            content={"path": final_answer.to_string(), "mime_type": "image/png"},
-        )
+        yield gr.ChatMessage(role="assistant", content={"path": final_answer.to_string(), "mime_type": "image/png"})
     elif isinstance(final_answer, AgentAudio):
-        yield gr.ChatMessage(
-            role="assistant",
-            content={"path": final_answer.to_string(), "mime_type": "audio/wav"},
-        )
+        yield gr.ChatMessage(role="assistant", content={"path": final_answer.to_string(), "mime_type": "audio/wav"})
     else:
         yield gr.ChatMessage(role="assistant", content=str(final_answer))
 
 
 class GradioUI:
-    """Custom Wegweiser UI"""
-
     def __init__(self, agent: MultiStepAgent, file_upload_folder: str | None = None):
         if not _is_package_available("gradio"):
-            raise ModuleNotFoundError(
-                "Please install 'gradio' extra to use the GradioUI: `pip install 'smolagents[gradio]'`"
-            )
+            raise ModuleNotFoundError("Please install 'gradio' extra to use the GradioUI: `pip install 'smolagents[gradio]'`")
         self.agent = agent
         self.file_upload_folder = file_upload_folder
         if self.file_upload_folder is not None:
@@ -133,58 +88,52 @@ class GradioUI:
                 os.mkdir(file_upload_folder)
 
     def interact_with_agent(self, prompt, messages):
-    import gradio as gr
+        import gradio as gr
+        messages.append(gr.ChatMessage(role="user", content=prompt))
+        yield messages
 
-    messages.append(gr.ChatMessage(role="user", content=prompt))
-    yield messages
-
-    final_response = ""
-    for msg in stream_to_gradio(self.agent, task=prompt, reset_agent_memory=False):
-        if hasattr(msg, "content"):
-            # Skip tool call messages
+        final_response = ""
+        for msg in stream_to_gradio(self.agent, task=prompt, reset_agent_memory=False):
+            if not hasattr(msg, "content"):
+                continue
             if hasattr(msg, "metadata") and msg.metadata:
                 continue
-
             content = msg.content
+            if not isinstance(content, str):
+                continue
+            if content.startswith("**Step"):
+                continue
+            if content.strip() == "-----":
+                continue
+            if "<span style=" in content:
+                continue
 
-            # Handle string content
-            if isinstance(content, str):
-                if msg.content.startswith("**Step"):
-                    continue
-                if msg.content.strip() == "-----":
-                    continue
-                if "<span style=" in msg.content:
-                    continue
+            # ✅ Unwrap FinalAnswerStep object
+            if "FinalAnswerStep(final_answer=" in content:
+                match = re.search(r"FinalAnswerStep\(final_answer=['\"](.+)['\"][\s]*\)$", content, re.DOTALL)
+                if match:
+                    content = match.group(1)
+                else:
+                    content = content.replace("FinalAnswerStep(final_answer=", "").strip("'\"() ")
 
-                # ✅ Strip the FinalAnswerStep wrapper
-                if "FinalAnswerStep(final_answer=" in content:
-                    import re
-                    match = re.search(r"FinalAnswerStep\(final_answer=['\"](.+)['\"]\)$", content, re.DOTALL)
-                    if match:
-                        content = match.group(1)
-                    else:
-                        # fallback — strip the wrapper manually
-                        content = content.replace("FinalAnswerStep(final_answer=", "").strip().strip("'\")")
+            # ✅ Strip label prefix
+            content = content.replace("**Final answer:**", "").strip()
 
-                # Strip "Final answer:" prefix
-                content = content.replace("**Final answer:**", "").strip()
+            # ✅ Fix escaped newlines
+            content = content.replace("\\n", "\n")
 
-                # ✅ Fix escaped newlines so they render properly
-                content = content.replace("\\n", "\n")
+            if content:
+                final_response = content
 
-                if content:
-                    final_response = content
+        if final_response:
+            messages.append(gr.ChatMessage(role="assistant", content=final_response))
+        yield messages
 
-    if final_response:
-        messages.append(gr.ChatMessage(role="assistant", content=final_response))
-
-    yield messages
     def log_user_message(self, text_input, file_uploads_log):
         return (
             text_input + (
                 f"\nYou have been provided with these files, which might be helpful or not: {file_uploads_log}"
-                if len(file_uploads_log) > 0
-                else ""
+                if len(file_uploads_log) > 0 else ""
             ),
             "",
         )
@@ -208,19 +157,14 @@ class GradioUI:
             letter-spacing: -0.5px;
             margin: 0;
         }
-        .wegweiser-title span {
-            color: #F5A623;
-        }
+        .wegweiser-title span { color: #F5A623; }
         .wegweiser-subtitle {
             font-size: 1rem;
             color: #8a9bb0;
             margin-top: 6px;
             margin-bottom: 0;
         }
-        .wegweiser-flag {
-            font-size: 1.8rem;
-            margin-bottom: 6px;
-        }
+        .wegweiser-flag { font-size: 1.8rem; margin-bottom: 6px; }
         .suggestions-row {
             display: flex;
             flex-wrap: wrap;
@@ -243,15 +187,8 @@ class GradioUI:
             border-color: #F5A623;
             transform: translateY(-2px);
         }
-        .suggestion-icon {
-            font-size: 1.3rem;
-            margin-bottom: 4px;
-        }
-        .suggestion-text {
-            font-size: 0.82rem;
-            color: #c5d3e0;
-            line-height: 1.3;
-        }
+        .suggestion-icon { font-size: 1.3rem; margin-bottom: 4px; }
+        .suggestion-text { font-size: 0.82rem; color: #c5d3e0; line-height: 1.3; }
         .chatbot-wrap {
             border-radius: 16px !important;
             border: 1px solid #2a3f55 !important;
@@ -264,9 +201,7 @@ class GradioUI:
             color: #e8f0f7 !important;
             font-size: 0.95rem !important;
         }
-        .input-row textarea:focus {
-            border-color: #F5A623 !important;
-        }
+        .input-row textarea:focus { border-color: #F5A623 !important; }
         .wegweiser-footer {
             text-align: center;
             padding: 12px;
@@ -275,12 +210,7 @@ class GradioUI:
         }
         """
 
-        with gr.Blocks(
-            fill_height=True,
-            css=custom_css,
-            title="Wegweiser — Germany Newcomer Guide"
-        ) as demo:
-
+        with gr.Blocks(fill_height=True, css=custom_css, title="Wegweiser — Germany Newcomer Guide") as demo:
             stored_messages = gr.State([])
             file_uploads_log = gr.State([])
 
