@@ -11,7 +11,7 @@
 
 ## 🖼️ Interface
 
-![Wegweiser UI](assets/screenshot.png)
+![Wegweiser UI](assets/screenshot1.png)
 
 > *Add your screenshot here — see instructions at the bottom of this README.*
 
