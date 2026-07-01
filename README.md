@@ -145,16 +145,6 @@ wegweiser-germany-agent/
 
 ---
 
-## 📸 How to Add Your Screenshot
-
-1. Open your live Space on Hugging Face
-2. Take a screenshot of the interface (with a question answered)
-3. In your GitHub repo, create a folder called `assets/`
-4. Upload the screenshot and name it `screenshot.png`
-5. The image will automatically appear at the top of this README
-
----
-
 ## 🌍 Why I Built This
 
 Germany has over 300,000 international arrivals per year. The bureaucracy is real, the language barrier is real, and most official resources are either in German or painfully dry. Wegweiser was built to be the knowledgeable expat friend that answers your 11pm "wait, what even IS a Steuer-ID?" panic with something actually useful.
