@@ -97,14 +97,6 @@ Returns current time for any timezone. Useful for Berlin, home country compariso
 
 ---
 
-## 🚀 Try It Live
-
-👉 **[Open on Hugging Face Spaces](https://huggingface.co/spaces/Shrey26/Shreyash_agent_template)**
-
-No setup needed — just open and start asking.
-
----
-
 ## 💻 Run It Locally
 
 ```bash
